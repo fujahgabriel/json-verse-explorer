@@ -61,7 +61,8 @@ export const GraphVisualizer = ({ jsonData }: GraphVisualizerProps) => {
         id: key,
         name: key + (data.length > 20 ? ` (showing ${pageStart}-${pageEnd} of ${data.length})` : ''),
         children: sampleData.map((item, index) => 
-          convertToHierarchy(item, `${key}-${currentPage * 20 + index}`, currentDepth + 1, maxDepth)
+          // Fix: Use explicit number casting to avoid TypeScript errors
+          convertToHierarchy(item, `${key}-${(currentPage * 20) + index}`, currentDepth + 1, maxDepth)
         )
       };
     }
