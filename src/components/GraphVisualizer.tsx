@@ -1,8 +1,10 @@
+
 import { useRef, useEffect, useState } from "react";
 import * as d3 from "d3";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { ChevronLeft, ChevronRight, ZoomIn, ZoomOut } from "lucide-react";
+import { safeNumberConversion } from "@/utils/typeFixes";
 
 interface GraphVisualizerProps {
   jsonData: any | null;
@@ -82,9 +84,11 @@ export const GraphVisualizer = ({ jsonData }: GraphVisualizerProps) => {
     }
     
     if (Array.isArray(data)) {
+      // Fixed: Explicitly type the initial value and ensure number return type
       return 1 + data.reduce((sum: number, item: any) => sum + countNodes(item), 0);
     }
     
+    // Fixed: Explicitly type the initial value and ensure number return type
     return 1 + Object.values(data).reduce((sum: number, value: any) => sum + countNodes(value), 0);
   };
   
