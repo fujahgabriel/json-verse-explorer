@@ -13,12 +13,12 @@ import {
   Copy, 
   Trash2, 
   Code, 
-  LineChart,
   Info
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useSearchParams, useNavigate } from "react-router-dom";
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
+import { Helmet } from "react-helmet";
 
 const sampleJson = `{
   "name": "JSONVerse Explorer",
@@ -53,10 +53,13 @@ const Index = () => {
         const decodedData = atob(compressedJson);
         const charData = decodedData.split('').map(x => x.charCodeAt(0));
         const binData = new Uint8Array(charData);
-        const decompressedData = pako.inflate(binData, { to: 'string' as any });
+        const decompressedData = pako.inflate(binData);
+        // Convert Uint8Array to string
+        const textDecoder = new TextDecoder('utf-8');
+        const resultString = textDecoder.decode(decompressedData);
         
-        setJsonInput(decompressedData);
-        validateAndFormatJson(decompressedData);
+        setJsonInput(resultString);
+        validateAndFormatJson(resultString);
       } catch (error) {
         toast({
           title: "Error loading compressed JSON",
@@ -143,8 +146,13 @@ const Index = () => {
       
       // For large JSON (>10KB), use compression
       if (jsonSize > 10 * 1024) {
-        // Compress using pako - Fix: Type assertion for the 'to' property
-        const compressed = pako.deflate(jsonInput, { level: 9, to: 'string' as any });
+        // Convert string to Uint8Array for compression
+        const textEncoder = new TextEncoder();
+        const uint8Array = textEncoder.encode(jsonInput);
+        
+        // Compress using pako
+        const compressed = pako.deflate(uint8Array, { level: 9 });
+        
         const binaryString = Array.from(compressed).map(byte => String.fromCharCode(byte)).join('');
         const base64Encoded = btoa(binaryString);
         
@@ -170,8 +178,13 @@ const Index = () => {
       // Update URL without full page reload (if not too large)
       if (jsonSize <= 100 * 1024) { // Only update URL for reasonably sized JSON
         if (jsonSize > 10 * 1024) {
-          // Fix: Type assertion for the 'to' property
-          const compressed = pako.deflate(jsonInput, { level: 9, to: 'string' as any });
+          // Convert string to Uint8Array for compression
+          const textEncoder = new TextEncoder();
+          const uint8Array = textEncoder.encode(jsonInput);
+          
+          // Compress using pako
+          const compressed = pako.deflate(uint8Array, { level: 9 });
+          
           const binaryString = Array.from(compressed).map(byte => String.fromCharCode(byte)).join('');
           const base64Encoded = btoa(binaryString);
           navigate(`/?c=${encodeURIComponent(base64Encoded)}`, { replace: true });
@@ -198,6 +211,12 @@ const Index = () => {
 
   return (
     <div className="min-h-screen flex flex-col">
+      <Helmet>
+        <title>JSONVerse Explorer - Free JSON Formatter, Validator and Visualizer Tool</title>
+        <meta name="description" content="Format, validate, visualize, and share your JSON data with JSONVerse Explorer's powerful online tool supporting large files and graph visualization." />
+        <meta name="keywords" content="json formatter, json validator, json visualizer, json viewer, json parser, json editor, json tools, online json, json graph, json share" />
+      </Helmet>
+      
       <header className="bg-gradient-to-r from-blue-600 to-purple-600 p-4 text-white">
         <div className="container mx-auto flex items-center justify-between">
           <h1 className="text-2xl font-bold">JSONVerse Explorer</h1>
@@ -255,6 +274,14 @@ const Index = () => {
       </header>
 
       <main className="container mx-auto flex-1 p-4 flex flex-col gap-4">
+        <section className="mb-4">
+          <h2 className="sr-only">JSON Formatter and Validator</h2>
+          <p className="text-muted-foreground text-sm">
+            JSONVerse Explorer is a free online tool that helps you format, validate, visualize, and share JSON data. 
+            Supports large files with advanced features like graph visualization and compression for sharing.
+          </p>
+        </section>
+        
         <div className="flex flex-col md:flex-row gap-4 flex-1">
           <div className="w-full md:w-1/2 flex flex-col">
             <div className="flex items-center justify-between mb-2">
@@ -339,7 +366,13 @@ const Index = () => {
 
       <footer className="border-t bg-background">
         <div className="container mx-auto p-4 text-center text-sm text-muted-foreground">
-          JSONVerse Explorer - A powerful JSON viewer, formatter and validator
+          <p>JSONVerse Explorer - A powerful JSON formatter, validator, and visualizer tool</p>
+          <p className="mt-1">Format, validate, visualize, and share your JSON data with our free online tool.</p>
+          <div className="mt-3 flex justify-center gap-4">
+            <a href="#features" className="hover:underline">Features</a>
+            <a href="#privacy" className="hover:underline">Privacy</a>
+            <a href="#terms" className="hover:underline">Terms</a>
+          </div>
         </div>
       </footer>
     </div>
