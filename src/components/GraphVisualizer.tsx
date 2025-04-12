@@ -3,7 +3,7 @@ import { useRef, useEffect, useState } from "react";
 import * as d3 from "d3";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { ChevronLeft, ChevronRight, ZoomIn, ZoomOut } from "lucide-react";
+import { ChevronLeft, ChevronRight, ZoomIn, ZoomOut, Plus, Minus } from "lucide-react";
 import { safeNumberConversion } from "@/utils/typeFixes";
 
 interface GraphVisualizerProps {
@@ -15,6 +15,8 @@ interface Node {
   name: string;
   value?: string;
   children?: Node[];
+  originalData?: any; // Store original data for expandable nodes
+  collapsed?: boolean; // Track if a node is collapsed
 }
 
 export const GraphVisualizer = ({ jsonData }: GraphVisualizerProps) => {
@@ -23,22 +25,31 @@ export const GraphVisualizer = ({ jsonData }: GraphVisualizerProps) => {
   const [zoomLevel, setZoomLevel] = useState(1);
   const [nodeLimit, setNodeLimit] = useState(100); // Limit number of visible nodes
   const [totalNodes, setTotalNodes] = useState(0);
+  const [expandedNodes, setExpandedNodes] = useState<Set<string>>(new Set());
+  const [nodesData, setNodesData] = useState<Node | null>(null);
   
   // Convert JSON data to hierarchical format for D3
-  const convertToHierarchy = (data: any, key = "root", currentDepth = 0, maxDepth = 3): Node => {
+  const convertToHierarchy = (data: any, key = "root", currentDepth = 0, maxDepth = 2, nodePath = ""): Node => {
+    const currentNodePath = nodePath ? `${nodePath}-${key}` : key;
+    
     if (data === null) {
-      return { id: key, name: key, value: "null" };
+      return { id: currentNodePath, name: key, value: "null" };
     }
     
     if (typeof data !== 'object') {
-      return { id: key, name: key, value: String(data) };
+      return { id: currentNodePath, name: key, value: String(data) };
     }
     
-    // For very nested objects, limit depth to prevent browser hanging
-    if (currentDepth >= maxDepth) {
+    // Check if this node should be collapsed
+    const isCollapsed = !expandedNodes.has(currentNodePath) && currentDepth >= maxDepth;
+    
+    // For very nested objects, collapse if not expanded
+    if (isCollapsed) {
       return { 
-        id: key, 
+        id: currentNodePath, 
         name: key, 
+        collapsed: true,
+        originalData: data,
         value: Array.isArray(data) 
           ? `Array[${data.length} items]` 
           : `Object{${Object.keys(data).length} props}` 
@@ -59,21 +70,22 @@ export const GraphVisualizer = ({ jsonData }: GraphVisualizerProps) => {
       const pageEnd = Math.min((currentPage + 1) * 20, data.length);
       
       return {
-        id: key,
+        id: currentNodePath,
         name: key + (data.length > 20 ? ` (showing ${pageStart}-${pageEnd} of ${data.length})` : ''),
+        originalData: data,
         children: sampleData.map((item: any, index: number) => 
-          // Fix: Use explicit number casting to avoid TypeScript errors
-          convertToHierarchy(item, `${key}-${(currentPage * 20) + index}`, currentDepth + 1, maxDepth)
+          convertToHierarchy(item, `${index}`, currentDepth + 1, maxDepth, currentNodePath)
         )
       };
     }
     
     return {
-      id: key,
+      id: currentNodePath,
       name: key,
+      originalData: data,
       children: Object.entries(data)
         .slice(0, nodeLimit) // Limit number of properties shown
-        .map(([k, v]) => convertToHierarchy(v, k, currentDepth + 1, maxDepth))
+        .map(([k, v]) => convertToHierarchy(v, k, currentDepth + 1, maxDepth, currentNodePath))
     };
   };
 
@@ -89,15 +101,29 @@ export const GraphVisualizer = ({ jsonData }: GraphVisualizerProps) => {
     }
     
     // Fixed: Explicitly type the initial value and ensure number return type
-    return 1 + Object.values(data).reduce((sum: number, value: any) => sum + countNodes(value), 0);
+    return 1 + Object.values(data).reduce((sum: number, value: any) => sum + safeNumberConversion(countNodes(value)), 0);
   };
   
+  // Handle node expansion/collapse
+  const toggleNode = (nodeId: string, data: any) => {
+    setExpandedNodes(prevExpanded => {
+      const newExpanded = new Set(prevExpanded);
+      if (newExpanded.has(nodeId)) {
+        newExpanded.delete(nodeId);
+      } else {
+        newExpanded.add(nodeId);
+      }
+      return newExpanded;
+    });
+  };
+  
+  // Convert data and initialize visualization
   useEffect(() => {
     if (!jsonData) {
       return;
     }
     
-    // Calculate total nodes
+    // Calculate total nodes and convert to hierarchy
     const count = countNodes(jsonData);
     setTotalNodes(count);
     
@@ -110,14 +136,23 @@ export const GraphVisualizer = ({ jsonData }: GraphVisualizerProps) => {
       setNodeLimit(200);
     }
     
+    const hierarchicalData = convertToHierarchy(jsonData);
+    setNodesData(hierarchicalData);
+  }, [jsonData, expandedNodes, currentPage]);
+  
+  // Render the graph
+  useEffect(() => {
+    if (!jsonData || !nodesData) {
+      return;
+    }
+    
     // Clear previous visualization
     d3.select(svgRef.current).selectAll("*").remove();
     
     const width = svgRef.current?.clientWidth || 800;
     const height = svgRef.current?.clientHeight || 600;
     
-    const hierarchicalData = convertToHierarchy(jsonData);
-    const root = d3.hierarchy(hierarchicalData);
+    const root = d3.hierarchy(nodesData);
     
     // Apply tree layout
     const treeLayout = d3.tree().size([height * zoomLevel - 100, width * zoomLevel - 160]);
@@ -178,10 +213,37 @@ export const GraphVisualizer = ({ jsonData }: GraphVisualizerProps) => {
       .attr("class", "node")
       .attr("transform", d => `translate(${d.y},${d.x})`);
     
-    // Add node circles
+    // Add node circles with different colors for expandable nodes
     nodes.append("circle")
       .attr("r", 5)
-      .attr("fill", d => d.children ? "#3b82f6" : "#22c55e");
+      .attr("fill", d => {
+        if (d.data.collapsed) return "#f97316"; // Orange for collapsed nodes
+        if (d.children) return "#3b82f6"; // Blue for parent nodes
+        return "#22c55e"; // Green for leaf nodes
+      });
+    
+    // Add expand/collapse buttons for nodes that can be expanded
+    nodes.filter(d => d.data.collapsed === true)
+      .append("circle")
+      .attr("r", 8)
+      .attr("cx", 12)
+      .attr("fill", "#f97316")
+      .attr("stroke", "#fff")
+      .attr("stroke-width", 1)
+      .attr("opacity", 0.7)
+      .attr("cursor", "pointer")
+      .on("click", (event, d) => toggleNode(d.data.id, d.data.originalData));
+    
+    // Add plus sign for expandable nodes
+    nodes.filter(d => d.data.collapsed === true)
+      .append("text")
+      .attr("x", 12)
+      .attr("y", 3)
+      .attr("text-anchor", "middle")
+      .attr("font-size", "10px")
+      .attr("fill", "#fff")
+      .attr("pointer-events", "none")
+      .text("+");
     
     // Add node labels (key names)
     nodes.append("text")
@@ -208,7 +270,7 @@ export const GraphVisualizer = ({ jsonData }: GraphVisualizerProps) => {
         return value;
       });
       
-  }, [jsonData, currentPage, zoomLevel, nodeLimit]);
+  }, [jsonData, currentPage, zoomLevel, nodeLimit, nodesData]);
   
   // Handle pagination for large arrays
   const hasNextPage = jsonData && Array.isArray(jsonData) && jsonData.length > (currentPage + 1) * 20;
@@ -274,7 +336,7 @@ export const GraphVisualizer = ({ jsonData }: GraphVisualizerProps) => {
       </div>
       <ScrollArea className="flex-1 relative">
         <div className="text-xs absolute top-2 left-2 bg-background/80 px-2 py-1 rounded z-10">
-          Tip: Click and drag to move the graph
+          Tip: Click and drag to move the graph. Click on orange nodes to expand them.
         </div>
         <svg ref={svgRef} className="w-full h-full min-h-[400px] cursor-move"></svg>
       </ScrollArea>
