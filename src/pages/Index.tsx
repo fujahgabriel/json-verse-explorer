@@ -5,6 +5,7 @@ import { JsonViewer } from "@/components/JsonViewer";
 import { GraphVisualizer } from "@/components/GraphVisualizer";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/components/ui/use-toast";
+import pako from "pako";
 import { 
   Share2, 
   Check, 
@@ -12,10 +13,12 @@ import {
   Copy, 
   Trash2, 
   Code, 
-  LineChart 
+  LineChart,
+  Info
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useSearchParams, useNavigate } from "react-router-dom";
+import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 
 const sampleJson = `{
   "name": "JSONVerse Explorer",
@@ -34,6 +37,7 @@ const Index = () => {
   const [isValid, setIsValid] = useState<boolean | null>(null);
   const [validationMessage, setValidationMessage] = useState("");
   const [activeTab, setActiveTab] = useState("formatted");
+  const [jsonSize, setJsonSize] = useState(0);
   const { toast } = useToast();
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
@@ -41,7 +45,26 @@ const Index = () => {
   // Check for shared JSON in URL
   useEffect(() => {
     const sharedJson = searchParams.get("json");
-    if (sharedJson) {
+    const compressedJson = searchParams.get("c");
+    
+    if (compressedJson) {
+      try {
+        // Decompress the data
+        const decodedData = atob(compressedJson);
+        const charData = decodedData.split('').map(x => x.charCodeAt(0));
+        const binData = new Uint8Array(charData);
+        const decompressedData = pako.inflate(binData, { to: 'string' });
+        
+        setJsonInput(decompressedData);
+        validateAndFormatJson(decompressedData);
+      } catch (error) {
+        toast({
+          title: "Error loading compressed JSON",
+          description: "The shared JSON could not be decompressed correctly.",
+          variant: "destructive",
+        });
+      }
+    } else if (sharedJson) {
       try {
         const decodedJson = atob(sharedJson);
         setJsonInput(decodedJson);
@@ -65,6 +88,7 @@ const Index = () => {
       setIsValid(null);
       setValidationMessage("");
       setFormattedJson("");
+      setJsonSize(0);
       return;
     }
 
@@ -74,10 +98,15 @@ const Index = () => {
       setFormattedJson(formatted);
       setIsValid(true);
       setValidationMessage("JSON is valid");
+      
+      // Calculate size of JSON
+      const sizeInBytes = new Blob([input]).size;
+      setJsonSize(sizeInBytes);
     } catch (error) {
       setIsValid(false);
       setValidationMessage(error instanceof Error ? error.message : "Invalid JSON");
       setFormattedJson("");
+      setJsonSize(0);
     }
   };
 
@@ -91,6 +120,7 @@ const Index = () => {
     setFormattedJson("");
     setIsValid(null);
     setValidationMessage("");
+    setJsonSize(0);
     toast({
       title: "Editor cleared",
       description: "The JSON editor has been cleared.",
@@ -109,8 +139,26 @@ const Index = () => {
 
   const handleShareClick = () => {
     if (jsonInput && isValid) {
-      const encodedJson = btoa(jsonInput);
-      const shareUrl = `${window.location.origin}/?json=${encodedJson}`;
+      let shareUrl;
+      
+      // For large JSON (>10KB), use compression
+      if (jsonSize > 10 * 1024) {
+        // Compress using pako
+        const compressed = pako.deflate(jsonInput, { level: 9, to: 'string' });
+        const binaryString = Array.from(compressed).map(byte => String.fromCharCode(byte)).join('');
+        const base64Encoded = btoa(binaryString);
+        
+        shareUrl = `${window.location.origin}/?c=${encodeURIComponent(base64Encoded)}`;
+        
+        toast({
+          title: "Using compressed sharing",
+          description: `Your ${(jsonSize / 1024).toFixed(2)}KB JSON has been compressed for sharing.`,
+        });
+      } else {
+        // Standard base64 encoding for smaller JSON
+        const encodedJson = btoa(jsonInput);
+        shareUrl = `${window.location.origin}/?json=${encodedJson}`;
+      }
       
       navigator.clipboard.writeText(shareUrl);
       
@@ -119,8 +167,18 @@ const Index = () => {
         description: "A link to share this JSON has been copied to your clipboard.",
       });
       
-      // Update URL without full page reload
-      navigate(`/?json=${encodedJson}`, { replace: true });
+      // Update URL without full page reload (if not too large)
+      if (jsonSize <= 100 * 1024) { // Only update URL for reasonably sized JSON
+        if (jsonSize > 10 * 1024) {
+          const compressed = pako.deflate(jsonInput, { level: 9, to: 'string' });
+          const binaryString = Array.from(compressed).map(byte => String.fromCharCode(byte)).join('');
+          const base64Encoded = btoa(binaryString);
+          navigate(`/?c=${encodeURIComponent(base64Encoded)}`, { replace: true });
+        } else {
+          const encodedJson = btoa(jsonInput);
+          navigate(`/?json=${encodedJson}`, { replace: true });
+        }
+      }
     } else {
       toast({
         title: "Cannot share",
@@ -128,6 +186,13 @@ const Index = () => {
         variant: "destructive",
       });
     }
+  };
+
+  // Format the JSON size in a human-readable way
+  const formatSize = (bytes: number): string => {
+    if (bytes < 1024) return `${bytes} bytes`;
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(2)} KB`;
+    return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
   };
 
   return (
@@ -145,6 +210,45 @@ const Index = () => {
               <Share2 className="mr-2 h-4 w-4" />
               Share
             </Button>
+            <Sheet>
+              <SheetTrigger asChild>
+                <Button 
+                  variant="outline" 
+                  size="sm" 
+                  className="bg-white/20 hover:bg-white/30 border-none text-white"
+                >
+                  <Info className="h-4 w-4" />
+                </Button>
+              </SheetTrigger>
+              <SheetContent>
+                <SheetHeader>
+                  <SheetTitle>About JSONVerse Explorer</SheetTitle>
+                  <SheetDescription>
+                    A powerful JSON viewer, formatter and validator
+                  </SheetDescription>
+                </SheetHeader>
+                <div className="mt-6 space-y-4 text-sm">
+                  <div>
+                    <h3 className="font-semibold">Large JSON Support</h3>
+                    <p className="text-muted-foreground mt-1">
+                      JSONVerse optimizes large JSON files using pagination, data sampling, and compression for sharing.
+                    </p>
+                  </div>
+                  <div>
+                    <h3 className="font-semibold">Graph View</h3>
+                    <p className="text-muted-foreground mt-1">
+                      For large datasets, the Graph view shows a subset of nodes with zoom and pagination controls.
+                    </p>
+                  </div>
+                  <div>
+                    <h3 className="font-semibold">Sharing</h3>
+                    <p className="text-muted-foreground mt-1">
+                      JSON data larger than 10KB is automatically compressed before sharing.
+                    </p>
+                  </div>
+                </div>
+              </SheetContent>
+            </Sheet>
           </div>
         </div>
       </header>
@@ -171,17 +275,24 @@ const Index = () => {
               <JsonEditor value={jsonInput} onChange={handleInputChange} />
             </div>
             
-            <div className="mt-2 flex items-center">
-              {isValid === true && (
-                <div className="flex items-center text-green-500 text-sm">
-                  <Check className="mr-1 h-4 w-4" />
-                  {validationMessage}
-                </div>
-              )}
-              {isValid === false && (
-                <div className="flex items-center text-destructive text-sm">
-                  <AlertCircle className="mr-1 h-4 w-4" />
-                  {validationMessage}
+            <div className="mt-2 flex items-center justify-between">
+              <div>
+                {isValid === true && (
+                  <div className="flex items-center text-green-500 text-sm">
+                    <Check className="mr-1 h-4 w-4" />
+                    {validationMessage}
+                  </div>
+                )}
+                {isValid === false && (
+                  <div className="flex items-center text-destructive text-sm">
+                    <AlertCircle className="mr-1 h-4 w-4" />
+                    {validationMessage}
+                  </div>
+                )}
+              </div>
+              {jsonSize > 0 && (
+                <div className="text-xs text-muted-foreground">
+                  Size: {formatSize(jsonSize)}
                 </div>
               )}
             </div>
