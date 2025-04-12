@@ -1,4 +1,3 @@
-
 import { useRef, useEffect, useState } from "react";
 import * as d3 from "d3";
 import { Button } from "@/components/ui/button";
@@ -60,7 +59,7 @@ export const GraphVisualizer = ({ jsonData }: GraphVisualizerProps) => {
       return {
         id: key,
         name: key + (data.length > 20 ? ` (showing ${pageStart}-${pageEnd} of ${data.length})` : ''),
-        children: sampleData.map((item, index) => 
+        children: sampleData.map((item: any, index: number) => 
           // Fix: Use explicit number casting to avoid TypeScript errors
           convertToHierarchy(item, `${key}-${(currentPage * 20) + index}`, currentDepth + 1, maxDepth)
         )
@@ -83,10 +82,10 @@ export const GraphVisualizer = ({ jsonData }: GraphVisualizerProps) => {
     }
     
     if (Array.isArray(data)) {
-      return 1 + data.reduce((sum, item) => sum + countNodes(item), 0);
+      return 1 + data.reduce((sum: number, item: any) => sum + countNodes(item), 0);
     }
     
-    return 1 + Object.values(data).reduce((sum, value) => sum + countNodes(value), 0);
+    return 1 + Object.values(data).reduce((sum: number, value: any) => sum + countNodes(value), 0);
   };
   
   useEffect(() => {
@@ -116,18 +115,45 @@ export const GraphVisualizer = ({ jsonData }: GraphVisualizerProps) => {
     const hierarchicalData = convertToHierarchy(jsonData);
     const root = d3.hierarchy(hierarchicalData);
     
-    // Apply zoom transform
+    // Apply tree layout
     const treeLayout = d3.tree().size([height * zoomLevel - 100, width * zoomLevel - 160]);
     const treeData = treeLayout(root);
     
+    // Create the main SVG element
     const svg = d3.select(svgRef.current)
       .attr("width", width * zoomLevel)
-      .attr("height", height * zoomLevel)
-      .append("g")
+      .attr("height", height * zoomLevel);
+    
+    // Add the container group for the graph
+    const g = svg.append("g")
       .attr("transform", `translate(80, 50) scale(${zoomLevel})`);
     
+    // Add dragging behavior
+    const dragBehavior = d3.drag<SVGSVGElement, unknown>()
+      .on("drag", (event) => {
+        // Get the current transform
+        const transform = g.attr("transform");
+        
+        // Parse the translate portion of the transform
+        const translateMatch = transform.match(/translate\(([^,]+),\s*([^)]+)\)/);
+        if (!translateMatch) return;
+        
+        const currentX = parseFloat(translateMatch[1]);
+        const currentY = parseFloat(translateMatch[2]);
+        
+        // Calculate the new transform with drag offsets, but keep the scale the same
+        const scaleMatch = transform.match(/scale\(([^)]+)\)/);
+        const scale = scaleMatch ? scaleMatch[1] : zoomLevel;
+        
+        // Apply the new transform with the dragged position
+        g.attr("transform", `translate(${currentX + event.dx}, ${currentY + event.dy}) scale(${scale})`);
+      });
+    
+    // Apply the drag behavior to the SVG element
+    svg.call(dragBehavior);
+    
     // Add links
-    svg.selectAll(".link")
+    g.selectAll(".link")
       .data(treeData.links())
       .enter()
       .append("path")
@@ -141,7 +167,7 @@ export const GraphVisualizer = ({ jsonData }: GraphVisualizerProps) => {
       );
     
     // Add nodes
-    const nodes = svg.selectAll(".node")
+    const nodes = g.selectAll(".node")
       .data(treeData.descendants())
       .enter()
       .append("g")
@@ -242,8 +268,11 @@ export const GraphVisualizer = ({ jsonData }: GraphVisualizerProps) => {
           )}
         </div>
       </div>
-      <ScrollArea className="flex-1">
-        <svg ref={svgRef} className="w-full h-full min-h-[400px]"></svg>
+      <ScrollArea className="flex-1 relative">
+        <div className="text-xs absolute top-2 left-2 bg-background/80 px-2 py-1 rounded z-10">
+          Tip: Click and drag to move the graph
+        </div>
+        <svg ref={svgRef} className="w-full h-full min-h-[400px] cursor-move"></svg>
       </ScrollArea>
     </div>
   );
