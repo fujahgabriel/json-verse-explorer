@@ -53,7 +53,7 @@ const Index = () => {
         const decodedData = atob(compressedJson);
         const charData = decodedData.split('').map(x => x.charCodeAt(0));
         const binData = new Uint8Array(charData);
-        const decompressedData = pako.inflate(binData, { to: 'string' });
+        const decompressedData = pako.inflate(binData, { to: 'string' as any });
         
         setJsonInput(decompressedData);
         validateAndFormatJson(decompressedData);
@@ -143,8 +143,8 @@ const Index = () => {
       
       // For large JSON (>10KB), use compression
       if (jsonSize > 10 * 1024) {
-        // Compress using pako
-        const compressed = pako.deflate(jsonInput, { level: 9, to: 'string' });
+        // Compress using pako - Fix: Type assertion for the 'to' property
+        const compressed = pako.deflate(jsonInput, { level: 9, to: 'string' as any });
         const binaryString = Array.from(compressed).map(byte => String.fromCharCode(byte)).join('');
         const base64Encoded = btoa(binaryString);
         
@@ -170,7 +170,8 @@ const Index = () => {
       // Update URL without full page reload (if not too large)
       if (jsonSize <= 100 * 1024) { // Only update URL for reasonably sized JSON
         if (jsonSize > 10 * 1024) {
-          const compressed = pako.deflate(jsonInput, { level: 9, to: 'string' });
+          // Fix: Type assertion for the 'to' property
+          const compressed = pako.deflate(jsonInput, { level: 9, to: 'string' as any });
           const binaryString = Array.from(compressed).map(byte => String.fromCharCode(byte)).join('');
           const base64Encoded = btoa(binaryString);
           navigate(`/?c=${encodeURIComponent(base64Encoded)}`, { replace: true });

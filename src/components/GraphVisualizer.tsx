@@ -53,9 +53,13 @@ export const GraphVisualizer = ({ jsonData }: GraphVisualizerProps) => {
         sampleData = data.slice(startIdx, startIdx + itemsPerPage);
       }
       
+      // Fix: Ensure numeric types for page calculation and display
+      const pageStart = (currentPage * 20) + 1;
+      const pageEnd = Math.min((currentPage + 1) * 20, data.length);
+      
       return {
         id: key,
-        name: key + (data.length > 20 ? ` (showing ${currentPage * 20 + 1}-${Math.min((currentPage + 1) * 20, data.length)} of ${data.length})` : ''),
+        name: key + (data.length > 20 ? ` (showing ${pageStart}-${pageEnd} of ${data.length})` : ''),
         children: sampleData.map((item, index) => 
           convertToHierarchy(item, `${key}-${currentPage * 20 + index}`, currentDepth + 1, maxDepth)
         )
